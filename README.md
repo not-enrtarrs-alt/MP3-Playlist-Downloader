@@ -1,6 +1,6 @@
 # MP3 Playlist Downloader
 
-Windows desktop playlist-to-MP3 library manager. It downloads one video at a time, tags each MP3 with the playlist album and thumbnail, tracks progress in SQLite, and optionally applies permanent mp3gain track gain. No scheduler or background service is used. A Windows onedir build has been smoke-tested; the per-user installer script requires Inno Setup and has not yet been compiled here.
+Windows desktop playlist-to-MP3 library manager. It downloads one video at a time, tags each MP3 with the playlist album and thumbnail, tracks progress in SQLite, and optionally applies permanent mp3gain track gain. No scheduler or background service is used. Ready-to-run Windows builds (installer and portable) are available on the [Releases page](https://github.com/not-enrtarrs-alt/MP3-Playlist-Downloader/releases/latest).
 
 ```text
 Playlists            Playlist tracks                         Legend
@@ -10,6 +10,22 @@ Playlists            Playlist tracks                         Legend
 + Add playlist       Extra.mp3                 Extra file     Yellow: extra
 Progress / Cancel                                            Grey: unavailable
 ```
+
+## Download
+
+Prebuilt Windows builds are attached to each [GitHub release](https://github.com/not-enrtarrs-alt/MP3-Playlist-Downloader/releases/latest). Python is not required to run them.
+
+| File | Description |
+|---|---|
+| `MP3-Playlist-Downloader-Setup-<version>.exe` | **Installer (recommended).** Per-user install to `%LOCALAPPDATA%\Programs\MP3 Playlist Downloader`, no admin rights needed. Adds a Start Menu shortcut, an optional desktop shortcut and an uninstaller. |
+| `MP3-Playlist-Downloader-<version>-windows-portable.zip` | **Portable one-dir build.** Extract anywhere and run `MP3 Playlist Downloader.exe`. Keep the `_internal` folder next to the executable. |
+
+Notes:
+
+- Requires Windows 10/11. **ffmpeg and ffprobe are not bundled:** install them on PATH or set their location under **Settings → Tools**. mp3gain is optional (see [mp3gain setup](docs/SETUP_MP3GAIN.md)).
+- The executables are not code-signed, so Windows SmartScreen may show a warning. Choose **More info → Run anyway**.
+- Settings, the database and logs live in `%APPDATA%\MP3 Playlist Downloader` for both builds. Uninstalling or deleting the portable folder keeps them, along with your downloaded MP3s.
+- yt-dlp is bundled inside the build. If YouTube changes break downloads, update to a newer release.
 
 ## Development quickstart
 
@@ -59,11 +75,11 @@ The output root is configurable; changing it affects newly added playlists only.
 
 ## Build and troubleshooting
 
-Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1` to test and create a PyInstaller onedir. If Inno Setup 6 is present, it also compiles a per-user installer. Existing onedir outputs are not overwritten. See [packaging](docs/PACKAGING.md) and the [manual checklist](docs/MANUAL_TEST.md).
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1` to test and create a PyInstaller onedir. If Inno Setup 6 is present, it also compiles a per-user installer. Existing onedir outputs are not overwritten. To publish these builds as release assets, see [Publishing a release](docs/PACKAGING.md#publishing-a-release). See [packaging](docs/PACKAGING.md) and the [manual checklist](docs/MANUAL_TEST.md).
 
 - **ffmpeg missing:** install it, add it to PATH, place it in `tools\ffmpeg\`, or choose its executable in Settings.
 - **mp3gain missing:** configure/install it or leave equalization off; downloaded MP3s remain usable.
 - **Bot check/rate limit:** pause, retry later, and consider cookies. Keep yt-dlp current; a bundled application must be rebuilt to update it.
 - **Files or settings unavailable:** check folder permissions and `logs\app.log`. A failed recycle operation leaves the tracked DB state unchanged.
 
-The real YouTube, mp3gain and Windows installer workflows still require a manual smoke test in an environment with those prerequisites. See [the requirement map](docs/SPEC.md) for known limitations.
+The real YouTube, mp3gain and Windows installer workflows should be smoke-tested manually in an environment with those prerequisites. See [the requirement map](docs/SPEC.md) for known limitations.
