@@ -1,0 +1,10 @@
+{
+  "title": "Example Playlist",
+  "entries": [
+    {"id": "aaaaaaaaaaa", "title": "First", "uploader": "Channel", "duration": 222, "thumbnails": [{"url": "small.jpg", "width": 120, "height": 90}, {"url": "large.jpg", "width": 640, "height": 480}]},
+    {"id": "bbbbbbbbbbb", "title": "Artist - Song", "uploader": "Artist - Topic", "duration": 198},
+    {"id": "ccccccccccc", "title": "Third"},
+    {"id": "ddddddddddd", "title": "Fourth"},
+    {"id": "eeeeeeeeeee", "title": "Fifth"}
+  ]
+}

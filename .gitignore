@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+data/
+logs/
+out/
+build/
+dist/
+tools/
+/mp3gain.exe
+/ffmpeg.exe
+/ffprobe.exe
+cookies.txt
+tests/fixtures/silent.mp3

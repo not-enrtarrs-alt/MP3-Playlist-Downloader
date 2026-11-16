@@ -1,0 +1,772 @@
+# Task: Build `mp3-playlist-downloader` — YouTube Playlist → Equalized MP3 Library (Windows GUI)
+
+## Objective
+
+Build a Python 3.11+ **PySide6 desktop application** in this repository that manages YouTube playlists and downloads every video as an MP3 into a per-playlist folder, tags each file with the playlist title as album and the video thumbnail as cover art, optionally equalizes audio with **mp3gain**, and tracks per-video state in SQLite instead of relying on filenames.
+
+The app must be usable without a terminal, must survive YouTube rate limits by persisting progress and offering Resume, must ask the user what to do with unknown MP3s found in the output folder, and must be packageable as a per-user Windows installer.
+
+`main_fixed.py` in the repo root is a **read-only behavior reference**. Do not modify it, import it, or copy it wholesale. `rl-analyzer-prompt.txt` is also read-only.
+
+## Locked decisions — do not re-litigate
+
+| Area | Decision |
+|---|---|
+| Language / GUI | Python 3.11+, PySide6 (Qt 6), Windows 10/11 |
+| App name | **MP3 Playlist Downloader** |
+| Package name | `mp3_playlist_downloader` |
+| Data location | `%APPDATA%\MP3 Playlist Downloader\` — `app.db`, `settings.json`, `logs\` |
+| Output location | Per-playlist subfolder under a configurable root; default `%USERPROFILE%\Music\MP3 Playlist Downloader` |
+| Download engine | `yt-dlp` **Python API** (not subprocess), one download at a time |
+| Audio | MP3 via `FFmpegExtractAudio`, quality `0`, `bestaudio/best` |
+| YouTube auth | User-selectable: none / `cookies.txt` / cookies-from-browser |
+| Filenames | Sanitized video title; collisions get ` (2)`, ` (3)`, … |
+| Metadata | Minimal ID3v2.3: title, artist, album = playlist title, cover = video thumbnail |
+| Topic videos | Uploader ending in ` - Topic`; strip suffix and parse `Artist - Title` |
+| Equalization | mp3gain CLI, **track gain applied permanently**, clipping prevention on, opt-in per run |
+| Auto-equalize | **Off by default**; setting to enable after each download |
+| Existing tracks | Setting: **Skip** (default) or **Overwrite** |
+| Extra files | Yellow rows; ask per file: Keep or Delete (Recycle Bin); never auto-delete |
+| Manual file link | **Copy** the chosen MP3 into the playlist folder (adopt in place if it is already there), then tag it |
+| Cross-playlist duplicate | Same YouTube video in two playlists = two DB rows and two files |
+| Playlist refresh | **Manual only**; cached DB data shown instantly on selection |
+| Rate limits | Pause queue, persist state, show banner + Resume; auto-retry after a configurable cooldown (default 60 min), max 3 auto-retries |
+| Delete | Send to Windows Recycle Bin, then reset the track's DB state |
+| Packaging | PyInstaller **onedir** + Inno Setup per-user installer |
+| Tests | `pytest` + `pytest-qt`, fully offline, mocked yt-dlp/mp3gain/network |
+| Reference | `main_fixed.py` is behavior reference only |
+
+## Session start protocol
+
+Do this every session before changing anything:
+
+1. Read `docs/PROGRESS.md`, `docs/HANDOFF.md`, `docs/DECISIONS.md`, `docs/PLAN.md`, and `docs/TOOLNOTES.md` if they exist.
+2. Inspect the repository tree and run `pytest -q` if tests exist.
+3. If docs and code disagree, the code is the source of truth; log the mismatch in `docs/DECISIONS.md`.
+4. Redo environment discovery below even on resume.
+5. Report in two lines: current milestone/sub-step, and what you will do next. Then continue without waiting for approval.
+
+If the repo has no `src/` or `pyproject.toml`, this is a fresh start. Begin at M0.
+
+## Step 0: environment discovery
+
+Write findings to `docs/TOOLNOTES.md`:
+
+- OS build, Python version, venv location, installed packages (`PySide6`, `yt-dlp`, `mutagen`, `send2trash`, `requests`, `pytest`, `pytest-qt`, `pyinstaller`).
+- Whether `ffmpeg` and `ffprobe` are on PATH and their versions.
+- Whether `mp3gain` is on PATH, in `tools\mp3gain\mp3gain.exe`, or absent. Record the output of `mp3gain /?` if found; the exact CLI flags must be verified, not assumed.
+- Whether Inno Setup (`ISCC.exe`) is installed and where.
+- Whether `%APPDATA%` and the default output root are writable.
+- Whether a test network call to `https://www.youtube.com` succeeds (do not require it).
+- Whether `main_fixed.py` exists and is unchanged.
+
+Authoring-time note (re-verify, do not trust): Python 3.11.4, `yt-dlp` 2026.07.04, `ffmpeg`/`ffprobe` present, `mutagen` installed, **`mp3gain` absent**. The app must therefore handle a missing equalizer gracefully from day one.
+
+Do not require network, cookies, or mp3gain to build or test. Use fakes and fixtures.
+
+## Working rules and anti-stall
+
+- Work on **one sub-step at a time**. A sub-step is one module or one small feature plus its tests.
+- After each sub-step, append one line to `docs/PROGRESS.md`: milestone, sub-step, status, next sub-step.
+- Run the relevant tests after each logic change.
+- Never end a turn immediately after a tool call. End with a short text message: what you did, whether it worked, and the next sub-step.
+- If a tool or command fails twice, log it in `docs/DECISIONS.md`, skip to the next independent sub-step, and mention it.
+- On ambiguity, choose the simplest option consistent with this spec, log the decision and reason in `docs/DECISIONS.md`, and continue.
+- Keep files under ~300 lines. Split modules rather than growing them.
+- Use type hints, docstrings, clear names, and UTC internally; format local time only in the UI.
+- Never print, log, or commit cookie contents, tokens, or full cookie paths in error dialogs.
+- Do not rewrite working files wholesale; make narrow edits.
+- Do not add features beyond this spec.
+
+## Architecture and file layout
+
+Create exactly this structure (names may be adjusted only if a strong reason is logged):
+
+```
+ytb-mp3-v2/
+  pyproject.toml
+  README.md
+  .gitignore
+  main_fixed.py                  (reference, untouched)
+  src/mp3_playlist_downloader/
+    __init__.py
+    __main__.py
+    app.py                       QApplication bootstrap, theme, main window
+    paths.py                     data dir, env override, default output root
+    logging_setup.py             rotating file log + Qt log bridge
+    settings.py                  JSON settings dataclass, validation, atomic save
+    models.py                    dataclasses/enums shared by core and UI
+    db.py                        sqlite3 connection, migrations, repositories
+    youtube/
+      __init__.py
+      client.py                  yt-dlp wrapper: playlist fetch + download
+      parse.py                   flat-playlist parsing, topic detection, URL normalize
+      errors.py                  typed YouTube errors + classifier
+    tagging.py                   mutagen ID3v2.3 title/artist/album/APIC
+    equalizer.py                 mp3gain discovery, command, execution
+    library.py                   folder scan, extra files, filename allocation
+    queue.py                     persisted download queue, pause/resume
+    services.py                  facades used by UI and CLI
+    cli.py                       doctor, demo, headless helpers
+    ui/
+      __init__.py
+      main_window.py
+      playlist_sidebar.py
+      track_table.py
+      track_model.py
+      legend_panel.py
+      settings_dialog.py
+      add_playlist_dialog.py
+      extra_files_dialog.py
+      banner.py
+      workers.py                 QThread/QRunnable bridges, signals
+      theme.py                   light/dark QSS and status colors
+      widgets.py                 small reusable widgets
+  tests/
+    conftest.py
+    fixtures/
+      playlist_flat.json
+      playlist_topic.json
+      playlist_unavailable.json
+      playlist_refreshed.json
+      video_info.json
+      silent.mp3                  (generated by conftest if missing)
+    test_settings.py
+    test_db.py
+    test_paths.py
+    test_filenames.py
+    test_youtube_parse.py
+    test_downloader.py
+    test_tagging.py
+    test_equalizer.py
+    test_library.py
+    test_queue.py
+    test_services.py
+    test_ui_main_window.py
+    test_ui_settings.py
+    test_ui_extra_files.py
+  scripts/
+    dev_run.ps1
+    build.ps1
+    installer.iss
+  docs/
+    PLAN.md
+    PROGRESS.md
+    DECISIONS.md
+    HANDOFF.md
+    TOOLNOTES.md
+    SPEC.md
+    SETUP_YOUTUBE.md
+    SETUP_MP3GAIN.md
+    PACKAGING.md
+    MANUAL_TEST.md
+    CHECKPOINTS/
+  data/                          (dev-local, gitignored)
+  logs/                          (gitignored)
+  out/                           (gitignored, demo output)
+```
+
+Use synchronous core code. Qt worker threads are allowed for responsiveness; no `asyncio`, no web server, no web UI.
+
+Recommended dependencies: `PySide6`, `yt-dlp`, `mutagen`, `send2trash`, `requests`; dev: `pytest`, `pytest-qt`, `pytest-mock`, `pyinstaller`. Do not add a database server, ORM, or heavy framework.
+
+## Settings and paths
+
+Store settings in `%APPDATA%\MP3 Playlist Downloader\settings.json` as UTF-8 JSON, written atomically (write temp + replace). Tests and demo must override the data directory with the `MP3PD_DATA_DIR` environment variable. Never store cookie contents, only paths.
+
+```json
+{
+  "version": 1,
+  "output_root": "C:\\Users\\<user>\\Music\\MP3 Playlist Downloader",
+  "cookies_mode": "none",
+  "cookies_file": "",
+  "cookies_browser": "chrome",
+  "overwrite_existing": false,
+  "auto_equalize": false,
+  "mp3gain_path": "",
+  "ffmpeg_path": "",
+  "theme": "system",
+  "rate_limit_cooldown_minutes": 60,
+  "auto_resume_after_rate_limit": true,
+  "confirm_delete": true,
+  "window_geometry": ""
+}
+```
+
+Validation rules:
+
+- `cookies_mode` ∈ `none | file | browser`; `file` requires an existing readable path; `browser` ∈ `chrome | firefox | edge | brave | chromium | opera | vivaldi`.
+- `theme` ∈ `system | light | dark`.
+- `rate_limit_cooldown_minutes` between 5 and 1440.
+- `overwrite_existing`, `auto_equalize`, `auto_resume_after_rate_limit`, `confirm_delete` are booleans.
+- Empty tool paths mean auto-detect: settings path → `tools\mp3gain\mp3gain.exe` next to the executable/repo → PATH. Same pattern for `ffmpeg.exe`.
+- Invalid settings never crash the app: fall back to defaults, log, and show a warning banner.
+- The output root must be creatable/writable; validate on save and on app start. Changing the root affects newly added playlists only; existing playlist folders stay where they are.
+
+Paths module:
+
+- `data_dir()` = `MP3PD_DATA_DIR` if set, else `%APPDATA%\MP3 Playlist Downloader` (fallback `%USERPROFILE%\.mp3_playlist_downloader` if `APPDATA` is unset).
+- `db_path()` = `data_dir()/app.db`; `settings_path()` = `data_dir()/settings.json`; `log_dir()` = `data_dir()/logs`.
+- `default_output_root()` = `%USERPROFILE%\Music\MP3 Playlist Downloader`.
+- `playlist_folder(root, title)` = `root / sanitize_filename(title)`; if another playlist in the DB already uses that path, append ` (2)`, ` (3)`, … Do **not** delete or recreate an existing folder — old downloads become visible as extra files, which is intended.
+
+## Data model
+
+SQLite with idempotent schema creation, `PRAGMA foreign_keys=ON`, `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=5000`, parameterized queries only, and a `meta` table holding `schema_version` (currently `1`). Use one connection per thread; never share a connection across Qt threads. Timestamps are UTC ISO 8601 strings.
+
+```sql
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS playlists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  url TEXT NOT NULL UNIQUE,              -- canonical https://www.youtube.com/playlist?list=...
+  title TEXT NOT NULL,
+  folder_path TEXT NOT NULL UNIQUE,
+  album_sync_pending INTEGER NOT NULL DEFAULT 0,
+  added_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_refreshed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  video_id TEXT NOT NULL,                -- YouTube 11-char id
+  title TEXT NOT NULL,                   -- raw YouTube title
+  uploader TEXT,
+  duration_seconds INTEGER,
+  thumbnail_url TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  in_playlist INTEGER NOT NULL DEFAULT 1,
+  unavailable INTEGER NOT NULL DEFAULT 0,
+  is_topic INTEGER NOT NULL DEFAULT 0,
+  downloaded INTEGER NOT NULL DEFAULT 0,
+  equalized INTEGER NOT NULL DEFAULT 0,
+  file_path TEXT,
+  file_size INTEGER,
+  download_state TEXT NOT NULL DEFAULT 'idle',  -- idle | queued | downloading | failed
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error_kind TEXT,                       -- rate_limited | unavailable | network | tag | equalize | other
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (playlist_id, video_id)
+);
+
+CREATE TABLE IF NOT EXISTS extra_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+  file_path TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  size_bytes INTEGER,
+  disposition TEXT NOT NULL DEFAULT 'pending',  -- pending | kept
+  discovered_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (playlist_id, file_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_videos_playlist ON videos(playlist_id, position);
+CREATE INDEX IF NOT EXISTS idx_videos_state ON videos(playlist_id, download_state);
+CREATE INDEX IF NOT EXISTS idx_extra_playlist ON extra_files(playlist_id, disposition);
+```
+
+Invariants:
+
+- `downloaded=1` implies `file_path` is non-null and the file exists (re-verified on every folder scan).
+- `equalized=1` implies `downloaded=1`.
+- `in_playlist=0` means the video disappeared from YouTube on the last refresh; it is never queued by "Download missing".
+- `unavailable=1` means YouTube reports the video as private/deleted/members-only; never queued until a refresh clears it.
+- The same `video_id` may exist in two playlists (different rows, different files).
+- `attempts` counts non-rate-limit download failures for the current file; reset on success or manual re-download.
+- `meta` keys: `schema_version`, `queue_paused_until`, `queue_pause_reason`, `queue_rate_limit_streak`.
+
+## Core behavior
+
+### URL handling and playlist ingestion
+
+- Accept `youtube.com/playlist?list=…`, `music.youtube.com/playlist?list=…`, `youtu.be/…?list=…`, and `youtube.com/watch?v=…&list=…`.
+- Extract the `list` parameter and store the canonical URL `https://www.youtube.com/playlist?list=<id>`. Reject URLs without `list=` with a clear message ("This is a single video. Add a playlist URL instead."). Reject YouTube Mix/radio IDs starting with `RD` ("This is an endless mix, not a playlist.").
+- Deduplicate playlists by canonical URL; selecting an existing one just focuses it.
+- Add playlist flow: validate URL → fetch flat metadata in a worker (spinner + Cancel) → on success insert playlist + videos in one transaction → select it → scan folder → show extra-files dialog if needed. On failure, show the error and add nothing. If the playlist title is empty, use `Playlist`.
+- Use `yt_dlp.YoutubeDL` with `extract_flat: "in_playlist"`, `skip_download: True`, `quiet: True`, `no_warnings: True`, and the configured cookie options. Do not shell out to `yt-dlp.exe`.
+- Flat entries may be `None`, missing titles, or missing ids: skip entries without an id, mark entries without a title as `[Unavailable video]` with `unavailable=1`. If a playlist contains the same video twice, keep the first occurrence and log the duplicate.
+- Store `position` from playlist order (0-based), `uploader`, `duration_seconds`, `thumbnail_url` (largest available, else `https://i.ytimg.com/vi/<id>/hqdefault.jpg`).
+- Detect topic videos in `parse.py`: `uploader` ending in ` - Topic` case-insensitively. Store `is_topic=1`. Never change download behavior based on this flag.
+
+### Playlist refresh (manual only)
+
+- Selecting a playlist **never** calls YouTube. Load cached rows from SQLite immediately.
+- Refresh button fetches the flat playlist and upserts in one transaction:
+  - Match by `video_id`; update title, uploader, duration, thumbnail, position, `is_topic`, `unavailable=0`, `in_playlist=1`.
+  - Preserve `downloaded`, `equalized`, `file_path`, `file_size`, `attempts`, `download_state` for existing rows.
+  - Videos absent from the new list get `in_playlist=0`; they remain visible in a grey "Removed from playlist" section and are never queued.
+  - New videos are inserted with default state.
+- If the playlist title changed: update `playlists.title` and set `album_sync_pending=1`. The UI shows an "Album tags out of date — Update" link; updating retags `TALB` on all downloaded files of that playlist in a worker. On success clear the flag; on partial failure keep it and report counts. The playlist **folder path is fixed at add time**; renaming on YouTube never moves files.
+- If refresh hits a rate limit, show an error dialog and leave all existing data untouched.
+
+### Download pipeline (one at a time)
+
+"Download missing" collects rows in the current playlist where `in_playlist=1`, `unavailable=0`, `downloaded=0`, and `download_state != 'downloading'`, ordered by `position`. With `overwrite_existing=true`, it also collects already-downloaded rows and asks for confirmation first ("N existing tracks will be replaced"). Before starting, verify ffmpeg is available; if not, show a blocking dialog with install/path instructions and do not queue anything.
+
+For each queued row:
+
+1. Set `download_state='downloading'` and emit progress to the UI.
+2. Compute the target filename: `sanitize_filename(display_title) + ".mp3"`. If the path is already used by this video, reuse it when overwriting. If it is used by another video, an extra file, or an unrelated file, append ` (2)`, ` (3)`, … until free. **Never overwrite an unrelated file.**
+3. Download to a temporary base in the playlist folder: `.tmp-<uuid>.%(ext)s`, using:
+   ```python
+   {
+     "format": "bestaudio/best",
+     "postprocessors": [
+       {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "0"},
+       {"key": "FFmpegThumbnailsConvertor", "format": "jpg"},
+     ],
+     "outtmpl": str(folder / f".tmp-{uuid}.%(ext)s"),
+     "noplaylist": True,
+     "writethumbnail": True,
+     "windowsfilenames": True,
+     "quiet": True,
+     "no_warnings": True,
+     "progress_hooks": [hook],
+     "ffmpeg_location": resolved_ffmpeg_or_none,
+     # cookie options
+   }
+   ```
+4. Verify the `.mp3` exists and `size > 0`; find the `.jpg` thumbnail (`.jpg`, `.jpeg`, `.png`, `.webp`; convert to JPEG with ffmpeg if needed).
+5. Tag the temp MP3 (see Tagging).
+6. If `auto_equalize=true`, equalize the temp MP3 (see Equalization). A failure here does not fail the download; it logs a warning and leaves `equalized=0`.
+7. Move the temp MP3 to the target path. If overwriting a tracked file, send the old file to the Recycle Bin after the new file is ready, then move the new one into place. If recycling fails, keep the old file, delete the temp, and mark the row failed.
+8. Update the row: `downloaded=1`, `equalized` as appropriate, `file_path`, `file_size`, `download_state='idle'`, `attempts=0`. Clear `error_kind`/`last_error` only if tagging and equalization both succeeded; otherwise keep the warning kind/message.
+9. Delete temp leftovers in a `finally` block.
+
+Failure handling:
+
+- `RateLimitedError`: do **not** mark failed. Set the row back to `queued`, set `meta.queue_paused_until` / `queue_pause_reason`, stop the queue, and emit a `rate_limited` signal.
+- `UnavailableError`: set `unavailable=1`, `download_state='idle'`, `error_kind='unavailable'`, log, continue with the next row.
+- `NetworkError`: retry once after 5 seconds; if it fails again, mark `failed`, `attempts += 1`, continue.
+- Any other error: mark `failed`, `attempts += 1`, store a short sanitized `last_error`, continue.
+- Cancel: stop after the current file, abort it, set the current row back to `queued`, leave the rest queued, show the paused banner. Never leave `.tmp-*` files behind.
+- On app close during work: confirm, then cancel and persist queued rows.
+
+Queue persistence:
+
+- The queue **is** the set of rows with `download_state='queued'`, ordered by playlist and position. No separate queue table.
+- On startup, any row left in `downloading` is reset to `queued` (the app is single-instance) and stale `.tmp-*` files in playlist folders are removed.
+- On startup, if queued rows exist, show an info banner: "N downloads pending — Resume". Do not auto-start on launch.
+- "Resume" restarts the queue from the first queued row.
+
+### Tagging
+
+Implement in `tagging.py` with `mutagen`:
+
+- Minimal fields only: `TIT2` (title), `TPE1` (artist), `TALB` (album = current playlist title), `APIC` cover.
+- Use `EasyID3` for text and `ID3` for `APIC`; save with `v2_version=3` and UTF-8 (`encoding=3`). If the file has no ID3 header, create one first. Delete existing `APIC` frames before adding the new one. Set `mime='image/jpeg'`, `type=3`, `desc='Cover'`.
+- Title/artist rules:
+  - Default: title = raw YouTube title, artist = uploader, fallback `"Unknown Artist"`.
+  - Topic video (`uploader` ends ` - Topic`): artist = uploader with the suffix removed. If the raw title matches `^(.+?)\s+-\s+(.+)$` and the first group normalizes equal to the cleaned artist (case-insensitive, punctuation-insensitive), use group 1 as artist and group 2 as title; otherwise keep the raw title.
+- The resulting tag title is the **display title** used for filenames and the UI; the DB keeps the raw YouTube title.
+- Cover: use the downloaded thumbnail; if missing, fetch `https://i.ytimg.com/vi/<id>/maxresdefault.jpg`, then `hqdefault.jpg` with `requests` (10s timeout). Convert non-JPEG to JPEG with ffmpeg. If all fail, tag without cover and log a warning.
+- Tagging failure on a normal download: log, keep the file, set `downloaded=1`, `error_kind='tag'`, and store the message in `last_error`; do not fail the download.
+- Retag album (`TALB` only) when the playlist title changes; preserve every other frame.
+
+### Equalization with mp3gain
+
+Implement in `equalizer.py`:
+
+- Discovery order: `settings.mp3gain_path` → `tools\mp3gain\mp3gain.exe` next to the executable/repo → `mp3gain.exe` on PATH.
+- If missing: disable the action, and on attempt show a dialog: "mp3gain not found. Set its path in Settings → Tools or install it." with buttons Open Settings / Close. Never mark anything equalized.
+- Command (verify against `mp3gain /?` during environment discovery and record the verified flags in `TOOLNOTES.md`):
+  ```
+  mp3gain /r /k /s s "<file>"
+  ```
+  `/r` = apply track gain, `/k` = prevent clipping, `/s s` = do not write an APE tag. Keep flags in one module constant so they can be corrected without touching callers.
+- Run with a 180s timeout, `CREATE_NO_WINDOW`, capture stdout/stderr, decode with `errors='replace'`, and treat exit code 0 as success. Log the first 500 characters of output on failure.
+- Apply gain **permanently**; do not write ReplayGain tags and do not re-encode with ffmpeg.
+- "Equalize selected" processes checked rows that are `downloaded=1` and `equalized=0`, sequentially, with progress and Cancel between files. Skip already-equalized rows. Per-file failure logs and continues; show a summary ("4 succeeded, 1 failed").
+- `equalized=1` only after a successful run. Re-downloading resets it to 0.
+- Auto-equalize after download runs in the same worker; a failure never blocks the download. On failure leave `equalized=0`, set `error_kind='equalize'`, store the message in `last_error`, and keep the file.
+- This operation is irreversible. The settings dialog must say so next to the toggle.
+
+### Folder scan, extra files, and deletion
+
+`library.py` owns the folder view:
+
+- Scan top-level `*.mp3` (case-insensitive) in the playlist folder. Ignore `.tmp-*` files and subfolders. Create the playlist folder on demand (add/download/link); if it is missing during a scan, treat every file as missing and recreate it when needed.
+- Known paths = `videos.file_path` + `extra_files.file_path` for that playlist, compared with `os.path.normcase(os.path.abspath(...))`.
+- Any other MP3 becomes an `extra_files` row with `disposition='pending'`.
+- If a video's `file_path` no longer exists: set `downloaded=0`, `equalized=0`, clear `file_path`/`file_size`, leave the title and state intact.
+- If an extra file disappears: delete its `extra_files` row.
+- Run the scan when a playlist is selected, after a download queue finishes, and after manual link/delete.
+- When new `pending` extra files are found, show the **Additional files found** dialog (see GUI). "Decide later" leaves them pending and yellow.
+- Keep: `disposition='kept'`; the file stays yellow with a "kept" label and is never deleted by the app.
+- Delete: send to the Recycle Bin with `send2trash`, then delete the `extra_files` row. If recycling fails, show an error and change nothing.
+- Never delete a file that is a video's `file_path` through this path.
+
+Delete selected tracks:
+
+- Confirmation lists the count (and honors `confirm_delete`).
+- Send each file to the Recycle Bin, then reset the row: `downloaded=0`, `equalized=0`, `file_path=NULL`, `file_size=NULL`, `download_state='idle'`, `attempts=0`, `error_kind=NULL`, `last_error=NULL`. If recycling fails, leave the row untouched and report the error.
+- Disallow while a queue is running or if the row is the current download.
+
+### Manual file linking ("Point to file")
+
+- Right-click a track → **Point to MP3 file…** opens a file dialog filtered to `*.mp3`.
+- Validate the file is readable and has an `.mp3` extension.
+- If the source is already inside this playlist folder and is an unlinked extra file: adopt it in place (rename only if a collision requires it), remove the `extra_files` row, then tag it.
+- If the source is already this track's `file_path`, re-tag it in place instead of copying.
+- Otherwise **copy** it into the playlist folder with a sanitized filename derived from the source stem; collisions get ` (2)`, ` (3)`.
+- If the track is already downloaded, confirm replacement; after the copy succeeds, send the old file to the Recycle Bin.
+- Tag the copied file with the track's title/artist/album/cover, set `downloaded=1`, `equalized=0`, `file_path`, `file_size`, `download_state='idle'`, and clear errors.
+- If `auto_equalize=true`, equalize immediately after tagging.
+- The source file outside the folder is never modified or deleted.
+
+### Rate limits and resume
+
+`youtube/errors.py` classifies failures:
+
+- `RateLimitedError`: HTTP 429, "too many requests", "sign in to confirm you're not a bot", "confirm you're not a bot", "try again later" from YouTube.
+- `UnavailableError`: private video, deleted video, members-only, "video unavailable", "this content isn't available".
+- `NetworkError`: DNS, timeout, connection reset, HTTP 5xx.
+- `YouTubeError`: everything else.
+
+Behavior:
+
+- On a rate limit during a queue run: stop, keep the current row queued, set `meta.queue_paused_until = now + rate_limit_cooldown_minutes`, `queue_pause_reason='rate_limited'`, and increment `queue_rate_limit_streak`.
+- Show the rate-limit banner with the reason and a live countdown, plus **Resume now** and **Dismiss**. Dismiss hides the banner and cancels auto-resume; queued rows stay pending.
+- If `auto_resume_after_rate_limit=true` and the app stays open, automatically resume when the countdown ends. After 3 consecutive auto-resume attempts that immediately rate-limit again, stop auto-resuming and require a manual click.
+- Manual **Resume now** resets `queue_rate_limit_streak` to 0.
+- A successful download resets `queue_rate_limit_streak=0`.
+- On startup, queued rows always produce a manual "N downloads pending — Resume" banner; never auto-start on launch.
+- On a rate limit during playlist add/refresh: error dialog, no data changes, no queue state.
+- Progress is always recoverable from SQLite; closing and reopening the app must not lose the queue or per-video state.
+
+### Logging
+
+- Rotating file handler at `%APPDATA%\MP3 Playlist Downloader\logs\app.log` (5 MB × 3), level INFO (DEBUG when `MP3PD_DEBUG=1`).
+- Timestamped, module-tagged lines. Log playlist adds/refreshes, queue start/stop, per-file results, equalizer results, DB migrations, rate-limit pauses, and errors.
+- Never log cookie contents, cookie file contents, or tokens. Show only the cookie file's basename in UI/logs. Truncate `last_error` to 500 characters.
+- Mirror logs into the GUI log drawer via a Qt signal.
+
+## GUI specification
+
+### Main window
+
+`QMainWindow`, title `MP3 Playlist Downloader`, default size ~1280×800, minimum ~1000×620. Persist geometry in `settings.json`. Three-column layout inside a horizontal splitter:
+
+```
++-----------------------------------------------------------------------------------+
+| [⚙ Settings]  MP3 Playlist Downloader                        [Theme] [Refresh]   |
++------------------+------------------------------------------+---------------------+
+| Playlists        | Playlist title                           | Legend              |
+|  Playlist 1      | youtube.com/playlist?list=…              | ● Green  Downloaded |
+|  Playlist 2      | C:\…\Folder            [Open folder]     |          + equalized|
+|  …               | [Album tags out of date — Update]        | ● Blue   Downloaded |
+|                  |                                          | ● Red    Not        |
+|                  | [Equalize selected] [Select all]         |          downloaded |
+|                  | [Unselect all] [Download missing]        | ● Yellow Extra file |
+|                  | [Delete selected]                        | ● Grey   Unavailable|
+|                  | +--------------------------------------+ |                     |
+|                  | | ☐ | # | Title              | Dur | State | | Selection: 3    |
+|                  | | ☐ | 1 | Song name          | 3:42| …     | | 24 tracks       |
+|                  | | ☐ | 2 | Song name          | 4:01| …     | | 18 downloaded   |
+|                  | +--------------------------------------+ | 12 equalized    |
+| [+ Add playlist] |                                          | 1 extra file    |
++------------------+------------------------------------------+---------------------+
+| Progress: [==========------] 12/40 · Downloading "…" · 1.2 MB/s · ETA 00:14  [Cancel] |
++-----------------------------------------------------------------------------------+
+| Log drawer (collapsible)                                                          |
++-----------------------------------------------------------------------------------+
+```
+
+Requirements:
+
+- Left sidebar: playlist rows show title and a small summary (`24 tracks · 18 downloaded`). Clicking selects. Right-click: **Refresh**, **Open folder**, **Remove playlist** (confirmation; removes DB rows only, files stay; disabled while a queue runs). Bottom: **+ Add playlist**.
+- Center: playlist title, canonical URL (selectable, ellipsized), folder path, **Open folder**, refresh button. Toolbar row exactly as sketched: **Equalize selected**, **Select all**, **Unselect all**, **Download missing**, **Delete selected**.
+- Right: legend panel with colored swatches and labels, selection count, playlist stats, and the album-sync link when applicable. Collapsible via a splitter.
+- Bottom: status/progress bar and a collapsible log drawer.
+- Empty states: no playlists → centered "No playlists yet" + Add playlist button. Empty playlist → "This playlist has no tracks. Refresh it."
+- Single instance: use Qt's `QLockFile` on `app.lock` in the data dir. If another live instance holds it, show a message and exit. Qt handles stale locks; never run two queues against the same DB.
+- Window close during a queue → confirmation; cancel cleanly and persist state.
+
+### Track table and colors
+
+Use a `QAbstractTableModel` (plus a proxy only if needed) with columns:
+
+1. Checkbox (no text)
+2. `#` (playlist position, 1-based)
+3. Title (with a small `Topic` badge when `is_topic=1`, and `Removed` italic when `in_playlist=0`)
+4. Duration (`m:ss`, blank if unknown)
+5. State (text, never color-only)
+
+Color rules (apply to the status dot **and** title text; also always show the state text):
+
+| State | Color | Light | Dark |
+|---|---|---|---|
+| Downloaded + equalized | Green | `#1B7F3B` | `#4CAF50` |
+| Downloaded, not equalized | Blue | `#1565C0` | `#64B5F6` |
+| Not downloaded (in playlist) | Red | `#C62828` | `#EF5350` |
+| Extra file in folder | Yellow/amber | `#8A6100` | `#FFD54F` |
+| Unavailable / removed | Grey | `#5F6368` | `#9CA3AF` |
+| Failed download | Red + warning icon/tooltip | `#C62828` | `#EF5350` |
+
+- State strings: `Downloaded · equalized`, `Downloaded`, `Not downloaded`, `Extra file`, `Extra file · kept`, `Unavailable`, `Removed from playlist`, `Failed`.
+- Priority: a downloaded row always uses the green/blue downloaded color, even if it is also unavailable or removed; show "Unavailable"/"Removed" as a badge and tooltip instead of greying out a file that still exists. Grey is only for rows with no file.
+- Row tooltips: full title, file path, YouTube URL, and last error when failed.
+- Checkboxes: independent per row; header checkbox is tri-state. **Select all** / **Unselect all** affect all visible rows. Selection resets when switching playlists.
+- Double-click a downloaded row → open the containing folder with the file selected. Double-click a missing row does nothing.
+- Extra-file rows appear at the bottom, sorted by filename, and are not part of the playlist position count.
+- No sorting controls; playlist order is canonical.
+- Keyboard: `Ctrl+A` selects all, `Delete` deletes selected, `Space` toggles the focused row's checkbox.
+
+### Toolbar actions
+
+- **Equalize selected**: enabled when at least one checked row is downloaded and not equalized. Processes those rows only. Disabled while a queue runs.
+- **Select all / Unselect all**: always enabled when the table has rows.
+- **Download missing**: queues missing tracks (see Download pipeline). If `overwrite_existing=true`, includes downloaded rows after confirmation. Disabled while a queue runs or when nothing qualifies; tooltip explains why.
+- **Delete selected**: enabled when at least one row is checked. Confirmation (unless disabled in settings). Works for tracks and extra files; extra files use the Recycle Bin and remove their row.
+- Buttons show counts in tooltips, e.g. "3 selected · 2 eligible".
+
+### Context menus
+
+Track right-click:
+
+- **Equalize now** (downloaded, not equalized)
+- **Point to MP3 file…**
+- **Re-download** (confirmation if `overwrite_existing=false`)
+- **Open in Explorer**
+- **Copy YouTube URL**
+- **Delete from disk** (Recycle Bin + reset)
+
+Extra-file right-click:
+
+- **Keep file**
+- **Delete file** (Recycle Bin)
+- **Open in Explorer**
+
+Playlist right-click:
+
+- **Refresh**
+- **Open folder**
+- **Remove playlist**
+
+### Dialogs
+
+**Add playlist**: URL field, hint text, Add/Cancel. While fetching: spinner + "Reading playlist…" and Cancel. Errors inline (invalid URL, no videos, rate limited, cookies required). On success, close and select the new playlist.
+
+**Settings** (tabbed):
+
+- *General*: output root (browse), existing tracks (radio: Skip / Overwrite), auto-equalize checkbox with an "irreversible" note, confirm before delete, theme (System/Light/Dark).
+- *YouTube*: cookies mode (None / cookies.txt / browser), file picker, browser dropdown, **Test cookies** button (runs a lightweight playlist fetch only when clicked; reports success/failure; requires network).
+- *Tools*: yt-dlp version (read-only), ffmpeg path + Browse + Detect, mp3gain path + Browse + Detect + **Test** (`mp3gain /?`), links to `docs/SETUP_MP3GAIN.md` and `docs/SETUP_YOUTUBE.md`.
+- *About*: version, data folder link, log folder link, "Open logs".
+
+Save validates and writes atomically; Cancel discards. Invalid paths show inline errors and do not close.
+
+**Additional files found**: modal on new pending extras. Table with checkbox, filename, size. Buttons: **Keep selected**, **Delete selected** (Recycle Bin), **Decide later**. Text: "These MP3 files are in the playlist folder but are not tracked by the app." Never pre-select Delete.
+
+**Confirmations**: delete N files, overwrite N existing tracks, remove playlist, close during download. Use the native Windows style; no custom chrome.
+
+**Errors**: use `QMessageBox` with a concise message and a "Show details" expander containing the sanitized error. Never include cookie contents.
+
+### Banner
+
+A dismissible frame above the table, hidden by default:
+
+- Info (blue): "3 additional files found" with Review.
+- Warning (amber): rate limit: "YouTube is rate-limiting downloads. Progress saved." + countdown + **Resume now** + **Dismiss**. Include the hint "If this persists, configure cookies in Settings → YouTube."
+- Warning: "N downloads pending — Resume".
+- Error (red): album tag sync failed, output folder not writable.
+
+### Threading and progress
+
+- All network, download, tag, equalize, retag, and scan work runs in `QThread`/`QThreadPool` workers. Never block the GUI thread.
+- Workers emit typed signals: `progress(percent, speed, eta)`, `track_started(id, title)`, `track_finished(id, ok, error)`, `queue_finished(summary)`, `rate_limited(reason, until)`, `log(line)`.
+- One queue worker at a time. While it runs, disable Add playlist, Refresh, Remove playlist, Point to file, Delete, and Equalize; Cancel remains enabled.
+- SQLite connections are created inside each worker thread. Do not pass connections across threads.
+- Status bar shows `12/40 · Downloading "Title" · 1.2 MB/s · ETA 00:14` and an overall progress bar for batches; per-file progress for the current item.
+- The UI must remain responsive during a 200-track playlist fetch and a long download.
+- When a queue finishes, show a summary in the status bar and log ("12 downloaded, 1 failed, 2 unavailable"); do not use a blocking dialog.
+
+### Theme
+
+- Light/dark QSS with a system default via Qt's color scheme; persist the choice.
+- Status colors from the table above; ensure ≥4.5:1 contrast for text.
+- Use native Windows fonts (`Segoe UI`), 9–10pt base, 28–32px rows.
+- No custom title bar, no frameless window, no animations beyond simple progress.
+
+## CLI and diagnostics
+
+The GUI is the product, but a small CLI is required for diagnostics and automated acceptance:
+
+```bash
+python -m mp3_playlist_downloader                  # launch GUI
+python -m mp3_playlist_downloader doctor [--json]  # environment + data checks, no network
+python -m mp3_playlist_downloader demo [--check]   # offline seeded GUI, or print+exit
+python -m mp3_playlist_downloader version
+```
+
+- `doctor` checks: Python ≥3.11, PySide6 import, yt-dlp version, ffmpeg/ffprobe, mp3gain path + `/?` output, data dir writable, DB schema version, output root writable, settings validity, cookie config presence (never contents), pending `queued` rows, downloaded rows whose files are missing, pending extra files. Exit `0` if no errors, `2` on config errors. Missing optional tools are warnings.
+- `demo` uses `MP3PD_DATA_DIR` pointed at a temp folder, seeds a demo playlist with 5 tracks (2 green, 1 blue, 1 red, 1 yellow extra) using fixture MP3s generated with ffmpeg (or a tiny checked-in silent fixture), and opens the GUI. `--check` prints a summary and exits 0. No network, no real DB.
+- `version` prints the version from `pyproject.toml`/`__init__.py`.
+
+## Packaging
+
+- `pyproject.toml` uses a `src/` layout, `requires-python = ">=3.11"`, console script `mp3-playlist-downloader = mp3_playlist_downloader.__main__:main`, and dependencies `PySide6`, `yt-dlp`, `mutagen`, `send2trash`, `requests`; dev extras `pytest`, `pytest-qt`, `pytest-mock`, `pyinstaller`.
+- `scripts/build.ps1`:
+  1. Create/reuse `.venv`, install the package with dev extras.
+  2. Run `pytest -q`; stop on failure.
+  3. Run PyInstaller **onedir**, windowed (`--noconsole`), name `MP3 Playlist Downloader`, icon if present, adding `src` and collecting PySide6/yt-dlp data.
+  4. Copy `tools\ffmpeg\` and `tools\mp3gain\` into the dist folder if they exist; warn clearly if absent.
+  5. Run Inno Setup `ISCC.exe scripts\installer.iss` if available; otherwise print instructions and leave the onedir build.
+- `scripts/installer.iss`: per-user install to `{localappdata}\Programs\MP3 Playlist Downloader`, Start Menu shortcut, optional desktop shortcut, uninstaller, AppId GUID, version from a define. Do **not** delete `%APPDATA%\MP3 Playlist Downloader` on uninstall. Do not commit ffmpeg/mp3gain binaries; document how to place them in `tools\`.
+- `scripts/dev_run.ps1` runs the GUI from the venv with `MP3PD_DEBUG=1`.
+- The windowed installer build has no console; `doctor`/`demo`/`version` are intended to be run from the source venv. Document this in `PACKAGING.md`.
+- The build must work without network if dependencies are already installed; log that yt-dlp updates require rebuilding.
+
+## Testing
+
+All tests must run **offline**, without cookies, real network, or mp3gain. Use `pytest`, `pytest-qt`, `pytest-mock`, `tmp_path`, and fakes. Set `QT_QPA_PLATFORM=offscreen` in `conftest.py` for headless runs.
+
+Required coverage:
+
+- **Settings/paths**: defaults, atomic save, validation errors, `MP3PD_DATA_DIR` override, output-root creation, invalid JSON fallback.
+- **Filenames**: invalid Windows characters, control characters, trailing dots/spaces, reserved names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`…), empty-after-sanitize fallback `Untitled`, 120-char cap, case-insensitive collision ` (2)`/` (3)`, Unicode titles.
+- **YouTube parsing**: flat fixture → models; unavailable entries; topic detection (`Artist - Topic`); `Artist - Title` parsing; URL normalization/rejection; thumbnail fallback.
+- **Downloader**: yt-dlp options contain the right format/postprocessors/cookies/outtmpl; progress hook mapping; temp-file cleanup; error classification for 429/bot/private/network; no subprocess call.
+- **Tagging**: write and read back `TIT2`/`TPE1`/`TALB`/`APIC` on a real silent MP3 fixture; topic title/artist parsing; missing thumbnail tolerated; ID3v2.3; APIC replacement.
+- **Equalizer**: discovery order, command flags, success/failure, timeout, missing binary, output truncation, no `equalized=1` on failure.
+- **Library**: scan finds extras, ignores `.tmp-*`, marks missing files, keeps/deletes extras via a fake `send2trash`, never deletes tracked files, filename allocation.
+- **DB**: schema idempotency, migrations, playlist CRUD, upsert preserves download state, cross-playlist duplicate rows, removed-from-playlist, queue transitions, cascade delete, WAL/foreign keys.
+- **Queue**: sequential order, overwrite confirmation path, cancel, rate-limit pause and resume, 3-strike auto-resume cap, startup pending banner, attempts/error fields.
+- **Services**: download missing selection, manual link copy vs in-place adopt, replace old file, retag album, delete reset.
+- **UI (pytest-qt)**: main window builds, playlist sidebar selects, table model colors/state strings, tri-state header, select all/unselect all, toolbar enablement, settings round-trip, extra-files dialog, banner visibility, no client call on playlist selection.
+- **Safety**: `caplog` must not contain cookie contents; logs redact.
+
+Fixtures: `playlist_flat.json` (5 entries incl. one topic), `playlist_topic.json`, `playlist_unavailable.json`, `playlist_refreshed.json` (one removed, one new), `video_info.json`. Generate `silent.mp3` with ffmpeg in `conftest.py` if absent (0.3s silence, MP3); skip tag tests with a clear reason if ffmpeg is unavailable (it is a runtime dependency anyway).
+
+## Documentation
+
+Create and keep current:
+
+- `README.md`: what it does, screenshots/ASCII layout, quickstart, adding playlists, colors/legend, settings, scheduling-free usage, folder map, troubleshooting, build instructions.
+- `docs/SPEC.md`: this spec, condensed.
+- `docs/PLAN.md`: milestones and current plan.
+- `docs/PROGRESS.md`: one line per completed sub-step.
+- `docs/DECISIONS.md`: decisions and one-line reasons, including deviations.
+- `docs/HANDOFF.md`: resume instructions, verified vs untested, known bugs, next step.
+- `docs/TOOLNOTES.md`: environment and tool capabilities, verified mp3gain flags.
+- `docs/SETUP_YOUTUBE.md`: exporting cookies.txt, browser-cookie caveats, private/age-restricted playlists, rate limits/bot checks, yt-dlp update policy.
+- `docs/SETUP_MP3GAIN.md`: download, placement (`tools\mp3gain\` or PATH), `mp3gain /?` verification, flags, irreversibility, unmaintained/32-bit caveat.
+- `docs/PACKAGING.md`: PyInstaller + Inno Setup steps, per-user install, where data lives, how to update yt-dlp.
+- `docs/MANUAL_TEST.md`: checklist with expected results for add/refresh/download/tag/cover/equalize/link/delete/extra files/rate-limit resume/settings/installer.
+
+Setup guide must state:
+
+- YouTube rate-limits unauthenticated downloads; cookies may be required, and yt-dlp must be kept up to date when YouTube changes.
+- Private/age-restricted playlists need valid cookies; cookies are sensitive and never leave the machine.
+- mp3gain applies irreversible gain changes; test on a copy first.
+- The app never deletes files permanently by default; deletes go to the Recycle Bin.
+
+## Milestones and acceptance
+
+| # | Scope | Done when |
+|---|---|---|
+| M0 | Scaffold, `pyproject.toml`, paths, settings, logging, DB schema, CLI skeleton, empty main window, docs skeleton | `doctor` runs cleanly; GUI opens; DB created; `pytest -q` passes |
+| M1 | Playlist add/refresh, flat parsing, sidebar, track table, colors, checkboxes, legend, cached load | UI tests pass; selecting a playlist makes no network call; refresh upserts and marks removed tracks |
+| M2 | Downloader, temp files, tagging, folder scan, extra-files dialog, delete to Recycle Bin, offline demo seed | Fake-download tests pass; ID3/APIC verified on fixture; extras detected/kept/deleted correctly; `demo --check` exits 0 |
+| M3 | mp3gain discovery/equalize, auto-equalize, settings dialog, toolbar actions | Equalizer tests pass; settings round-trip; missing mp3gain handled gracefully; pytest-qt green |
+| M4 | Rate-limit pause/resume, manual link, overwrite/re-download, retag album, queue persistence, polish | Queue tests pass; resume survives restart; link/overwrite/retag tests pass |
+| M5 | Packaging scripts, Inno Setup, full docs, `doctor`/`demo`, full test suite | `scripts/build.ps1` produces an onedir build and installer (or documented limitation); docs complete; `pytest -q` green |
+| M6 | Optional real smoke test with the user's small playlist, final polish, handoff | A real playlist downloads, tags, covers, and equalizes (if mp3gain installed); no data loss |
+
+A milestone is done only when its acceptance check passes. Do not start the next milestone while the current one fails.
+
+## Definition of done
+
+- `pytest -q` passes with no network, cookies, or mp3gain.
+- `python -m mp3_playlist_downloader demo --check` exits 0 and the demo GUI shows all five states.
+- `python -m mp3_playlist_downloader doctor` gives a clear report; missing mp3gain/cookies are warnings.
+- Adding and refreshing a real playlist works with valid cookies; downloads produce MP3s with title/artist/album/cover.
+- Equalization works when mp3gain is present and degrades cleanly when absent.
+- Extra files are detected, never auto-deleted, and can be kept or recycled per file.
+- Rate-limit pauses persist across restarts and resume correctly.
+- The per-user installer builds and installs; data survives uninstall/reinstall.
+- Every requirement maps to code or a documented limitation.
+- No cookies, tokens, or personal paths are committed.
+- `docs/PROGRESS.md` and `docs/HANDOFF.md` are current.
+
+## Do not
+
+- Do not modify `main_fixed.py` or `rl-analyzer-prompt.txt`.
+- Do not use filename matching to decide whether a video is downloaded; SQLite is the source of truth. Allocating collision-free filenames from disk is fine.
+- Do not auto-delete any file. Deletes go to the Recycle Bin after confirmation.
+- Do not delete or overwrite unrelated files in the playlist folder; allocate ` (n)` names instead.
+- Do not download or keep video/intermediate files; the folder contains only tagged MP3s (plus temporary `.tmp-*` files that are cleaned up).
+- Do not run downloads in parallel.
+- Do not auto-refresh playlists on selection.
+- Do not block the GUI thread with network, tagging, scanning, or equalizing.
+- Do not re-encode during equalization; mp3gain must modify gain in place.
+- Do not write ReplayGain/APE tags or ID3v2.4.
+- Do not mark `equalized=1` on failure or when mp3gain is missing.
+- Do not store cookie contents, only the file path.
+- Do not add a web UI, HTTP server, async workers, Docker, tray service, playback, lyrics, or an ID3 editor.
+- Do not add features outside this spec.
+- Do not end a turn immediately after a tool call.
+- Do not recreate, restructure, or overwrite working code on resume.
+- Do not commit `data/`, `logs/`, `out/`, `tools/*.exe`, cookies, or build artifacts.
+
+## Milestone checkpoints
+
+When a milestone's acceptance check passes:
+
+- Write `docs/CHECKPOINTS/M<N>.md` with: files changed, tests run and results, acceptance evidence, and known limitations.
+- Append the milestone completion to `docs/PROGRESS.md`.
+- Do not start the next milestone until the checkpoint exists.
+
+## Stopping rule
+
+Stop only when:
+
+- a milestone is finished and checkpointed, or
+- you are truly blocked.
+
+Either way, end with the exact line:
+
+```
+NEXT: <next sub-step>
+```
+
+so the user can reply `continue`.
+
+## Handoff protocol
+
+When the user says `wrap up` or `handoff`:
+
+- Write `docs/HANDOFF.md` containing:
+  - Last completed milestone and acceptance result.
+  - What is verified vs. untested.
+  - Known bugs with file/function names.
+  - Deviations from this spec and why.
+  - Conventions the next agent must follow.
+  - Exact next step and the files it will touch.
+- Update `docs/PROGRESS.md`.
+- Do not start a new milestone.
+
+## First-run checklist for the human
+
+1. Install Python 3.11+ and put `ffmpeg.exe` on PATH (or in `tools\ffmpeg\`).
+2. Download the mp3gain CLI and place `mp3gain.exe` in `tools\mp3gain\` or on PATH.
+3. Create a venv and install: `python -m venv .venv`, `.venv\Scripts\pip install -e ".[dev]"`.
+4. Run `python -m mp3_playlist_downloader doctor`.
+5. Launch the app, set the output root, and configure cookies (None / cookies.txt / browser).
+6. Add a small playlist, refresh, and download 1–2 tracks; verify title/artist/album/cover in Windows Explorer.
+7. Select a track and click **Equalize selected**; verify the color turns green.
+8. Drop an MP3 into the playlist folder and refresh the scan; verify the yellow row and the keep/delete dialog.
+9. Build the installer with `scripts\build.ps1` and install per-user.
+
+## Final instruction
+
+Start at M0. Build the app, run the tests, update the docs, and leave the repo in a runnable state. Do not ask questions; decide, log, and continue.
+

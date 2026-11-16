@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mp3-playlist-downloader"
+version = "0.1.0"
+description = "Windows desktop YouTube playlist to MP3 library manager"
+requires-python = ">=3.11"
+dependencies = ["PySide6", "yt-dlp", "mutagen", "send2trash", "requests"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-qt", "pytest-mock", "pyinstaller"]
+
+[project.scripts]
+mp3-playlist-downloader = "mp3_playlist_downloader.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

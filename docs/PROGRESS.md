@@ -1,0 +1,138 @@
+# Progress
+
+- M0 | Environment discovery | complete | project scaffold and dependencies
+- M0 | Project scaffold and dependencies | complete; editable install succeeded | paths and filename safety
+- M0 | Paths and filename safety | complete; 11 tests passed | settings validation and atomic storage
+- M0 | Settings validation and atomic storage | complete; 16 relevant tests passed | SQLite schema and initialization
+- M0 | SQLite schema and initialization | complete; 3 tests passed | rotating logging and Qt bridge
+- M0 | Rotating logging and Qt bridge | complete; 2 tests passed | CLI and offline doctor
+- M0 | CLI and offline doctor | complete; 2 tests passed | Qt application and empty window
+- M0 | Qt application and empty window | complete; 3 relevant tests passed | startup and single-instance acceptance tests
+- M0 | Startup and single-instance acceptance tests | complete; 4 tests passed | full M0 acceptance and checkpoint
+- M0 | Milestone acceptance and checkpoint | complete; 36 tests passed, doctor and offscreen startup passed | M1 URL normalization and flat playlist parsing
+- M1 | URL normalization and flat playlist parsing | complete; 16 offline tests passed | YouTube client and typed errors
+- M1 | YouTube client and typed errors | complete; 24 relevant tests passed | transactional playlist repository
+- M1 | Transactional playlist repository | complete; 5 tests passed | playlist services and worker bridge
+- M1 | Playlist services and worker bridge | complete; 8 relevant tests passed | cached track table model and selection
+- M1 | Cached track table model and selection | complete; 2 tests passed | sidebar, legend and add dialog
+- M1 | Sidebar, legend and add dialog components | complete; 5 relevant tests passed | main-window playlist integration
+- M1 | Main-window playlist integration | complete; 7 relevant tests passed | offline worker and cached-selection integration tests
+- M1 | Offline worker and cached-selection integration | complete; 8 relevant tests passed | add-dialog success and failure coverage
+- M1 | Add-dialog success and failure coverage | complete; 22 relevant tests passed | yt-dlp diagnostic privacy hardening
+- M1 | yt-dlp diagnostic privacy hardening | complete; 17 relevant tests passed | table header and untrusted display checks
+- M1 | Table header and untrusted display checks | complete; 10 relevant tests passed | full M1 acceptance and checkpoint
+- M1 | Milestone acceptance and checkpoint | complete; 76 offline tests passed | M2 folder scanning and extra-file persistence
+- M2 | Safe folder scanning and filename allocation | complete; 5 tests passed | explicit keep and Recycle Bin deletion
+- M2 | Explicit keep and Recycle Bin deletion | complete; 9 tests passed | ID3 tagging and cover handling
+- M2 | ID3 tagging and cover handling | complete; 3 tests passed with real generated MP3 | tool discovery and download pipeline
+- M2 | Shared tool discovery | complete; 8 relevant tests passed | single-download pipeline
+- M2 | Single-download pipeline | complete; 7 relevant tests passed | sequential persisted queue
+- M2 | Sequential persisted queue | complete; 5 tests passed | queue eligibility safety
+- M2 | Queue eligibility safety | complete; 6 tests passed | library and queue Qt worker bridges
+- M2 | Library and queue Qt worker bridges | complete; 16 relevant tests passed | additional-files dialog
+- M2 | Additional-files dialog | complete; 2 pytest-qt tests passed | asynchronous folder scan integration
+- M2 | Asynchronous folder scan integration | complete; 15 relevant tests passed | cached-scan and deletion UI tests
+- M2 | Cached-scan and deletion UI tests | complete; 7 tests passed | queue controller and startup recovery
+- M2 | Queue controller and startup recovery | complete; 15 relevant tests passed | download UI and close/cancel tests
+- M2 | Download UI and close/cancel tests | complete; 3 pytest-qt tests passed | offline demo seed and CLI
+- M2 | Offline demo seed and CLI | complete; 2 tests passed | file-action context menus and scan safety
+- M2 | File-action context menus and scan safety | complete; 23 relevant tests passed | explicit deletion UI and end-to-end pipeline tests
+- M2 | Explicit deletion UI | complete; 12 relevant tests passed | end-to-end queue and scan invariants
+- M2 | End-to-end queue and scan invariants | complete; 26 relevant tests passed | full M2 acceptance checks
+- M2 | Initial acceptance run | complete; 113 tests passed and demo check succeeded | atomic publish and demo GUI verification
+- M2 | Atomic publish and demo GUI verification | complete; 16 relevant tests passed | thumbnail conversion verification
+- M2 | Thumbnail conversion verification | complete; 4 real-ffmpeg/ID3 tests passed | final M2 acceptance and checkpoint
+- M2 | Milestone acceptance and checkpoint | complete; 116 offline tests passed, demo check passed | M3 mp3gain discovery and execution
+- M3 | mp3gain discovery and execution | complete; 5 offline tests passed; real flags unverified | download auto-equalization
+- M3 | Download auto-equalization | complete; 20 relevant tests passed | selected-track equalization service
+- M3 | Selected-track equalization service | complete; 11 relevant tests passed | settings tool-path validation
+- M3 | Settings tool-path validation | complete; 20 relevant tests passed | settings dialog tabs
+- M3 | Settings dialog tabs | complete; 16 relevant tests passed | settings dialog and diagnostic workers
+- M3 | Settings dialog and diagnostic workers | complete; 20 relevant tests passed | selected-equalization worker and controller
+- M3 | Selected-equalization worker and controller | complete; 7 relevant tests passed | main-window settings and equalization integration
+- M3 | Main-window settings and equalization integration | complete; 21 relevant tests passed | selected-equalization GUI and download-state tests
+- M3 | Selected-equalization GUI | complete; 4 pytest-qt tests passed | download database equalization-state coverage
+- M3 | Download database equalization-state coverage | complete; 18 relevant tests passed | M3 setup guidance and full acceptance
+- M3 | Fresh-database startup race | fixed; 17 relevant tests passed | rerun full M3 acceptance
+- M3 | Full-suite rerun | complete; 140 tests passed | diagnostic privacy and help-output tests
+- M3 | Diagnostic privacy and help-output tests | complete; 12 relevant tests passed | final acceptance and checkpoint
+- M3 | Initial acceptance | complete; 142 tests passed, demo and doctor passed | main-window module-size cleanup
+- M3 | Main-window module-size cleanup | complete; 15 relevant tests passed | final acceptance and checkpoint
+- M3 | Milestone acceptance and checkpoint | complete; 143 offline tests passed, demo and doctor passed | M4 rate-limit countdown and bounded auto-resume
+- M4 | Persisted rate-limit retry policy | complete; 11 queue tests passed | countdown and auto-resume UI
+- M4 | Countdown and auto-resume UI | complete; 18 relevant tests passed | safe overwrite download pipeline
+- M4 | Safe overwrite download pipeline | complete; 12 relevant tests passed | persisted overwrite queue selection
+- M4 | Persisted overwrite queue selection | complete; 25 relevant tests passed | overwrite confirmation and re-download UI
+- M4 | Overwrite confirmation and re-download UI | complete; 23 relevant tests passed | manual-link core
+- M4 | Manual-link core | complete; 16 relevant tests passed | album retagging service
+- M4 | Album retagging service | complete; 18 relevant tests passed | manual-link and retag worker/UI
+- M4 | Cancellable manual-link core | complete; 14 relevant tests passed | manual-link and retag worker/UI
+- M4 | Manual-link and retag workers | complete; 15 relevant tests passed | integrate file operations into main window
+- M4 | File operation UI integration | complete; 21 relevant tests passed | link and album-retag UI tests
+- M4 | Link and album-retag UI tests | complete; 19 relevant tests passed | modal retry and source-race safety
+- M4 | Modal retry and source-race safety | complete; 33 relevant tests passed | download progress presentation
+- M4 | Download progress presentation | complete; 11 relevant tests passed | integrated retry and overwrite acceptance tests
+- M4 | Integrated retry and overwrite acceptance tests | complete; 17 relevant tests passed | cross-playlist manual-link safety
+- M4 | Cross-playlist manual-link safety | complete; 19 relevant tests passed | full M4 acceptance and module-size review
+- M4 | Initial full acceptance | complete; 177 tests passed, demo passed | close-after-work lifecycle safety
+- M4 | Close-after-work lifecycle safety | complete; 20 relevant tests passed | final M4 acceptance and checkpoint
+- M4 | Milestone acceptance and checkpoint | complete; 177 offline tests passed, demo and doctor passed | M5 development launcher
+- M5 | Development launcher | complete; version smoke test passed | packaging entry point and installer
+- M5 | Development launcher tests | complete; 2 tests passed | packaging entry point and installer
+- M5 | Packaging entry point and installer definition | complete; 4 offline tests passed; compiler absent | onedir build script
+- M5 | Onedir build script | complete; 5 script tests passed | offline Windows build verification
+- M5 | Offline Windows onedir build | complete; 183 tests passed; Inno Setup unavailable | frozen executable smoke checks
+- M5 | Frozen executable smoke checks | complete; version and isolated GUI exit 0 | doctor tool-version diagnostics
+- M5 | Doctor tool-version diagnostics | complete; 13 relevant tests passed | demo state verification
+- M5 | Demo state verification | complete; 11 relevant tests passed | ffmpeg-free offline demo fixture
+- M5 | ffmpeg-free offline demo fixture | complete; 12 relevant tests passed | packaging overwrite safety
+- M5 | Packaging overwrite safety | complete; 12 relevant tests passed | condensed specification and requirement map
+- M5 | Condensed specification and requirement map | complete | packaging documentation
+- M5 | Packaging documentation | complete | manual acceptance checklist
+- M5 | Manual acceptance checklist | complete | README quickstart and troubleshooting
+- M5 | README quickstart and troubleshooting | complete | YouTube authentication guidance
+- M5 | YouTube authentication guidance | complete | rebuild final onedir offline
+- M5 | Final offline onedir rebuild | complete; 188 tests passed; installer compiler absent | final frozen smoke and acceptance
+- M5 | Final frozen smoke | complete; GUI, version, doctor and demo exit 0 | diagnostic redaction hardening
+- M5 | Diagnostic redaction hardening | complete; 18 relevant tests passed | rebuild redacted final onedir
+- M5 | Redacted final onedir rebuild and smoke | complete; 189 tests passed; GUI and frozen CLI exited 0 | final source diagnostics and checkpoint
+- M5 | Milestone acceptance and checkpoint | complete; 189 offline tests and onedir smoke passed; Inno Setup absent | M6 optional real smoke or final handoff
+- M6 | Light/dark palette and widget contrast | complete; 24 relevant tests passed | selected-row contrast verification
+- M6 | Album/equalization progress completion | complete; 22 relevant tests passed | selected-row contrast verification
+- M6 | Selected-row contrast verification | complete; 9 relevant tests passed | investigate reported download failure
+- M6 | Thumbnail-conversion recovery | complete; 20 downloader/tagging tests passed, including real yt-dlp hooks | safe download diagnostics
+- M6 | Safe download diagnostics | complete; 40 relevant tests passed | disposable real-tool smoke tests
+- M6 | Disposable real-tool smoke tests | complete; configured mp3gain changed synthetic audio without APE tags; configured ffmpeg/yt-dlp recovered MP3 and cover offline | cancellation-progress and final acceptance
+- M6 | Recovery classification safety | complete; 31 relevant tests passed | explicit rate-limit guard and full acceptance
+- M6 | Explicit rate-limit guard | complete; 30 relevant tests passed | updated onedir rebuild
+- M6 | Updated onedir rebuild | complete; 206 offline tests passed; Inno Setup unavailable | frozen light-theme smoke and handoff
+- M6 | Frozen light-theme smoke | complete; readable Windows capture and frozen diagnostics exited 0 | user retest of a real YouTube download
+- M6 | Real-download acceptance | blocked pending retest; offline real-tool recovery passed, no user library modified | retest one failed track with the updated onedir build
+- M6 | Official-title cleanup | complete; 49 relevant tests passed | trailing-credit ordering and integration coverage
+- M6 | Trailing-credit ordering | complete; 46 parsing tests passed | top-level separator safety and integration coverage
+- M6 | Top-level separator safety | complete; 48 parsing tests passed | display/tag/filename integration
+- M6 | Display/tag/filename integration | complete; 68 relevant tests passed, raw DB titles preserved | trailing-marker safety
+- M6 | Trailing-marker safety | complete; 51 relevant tests passed | ambiguous-title safeguards
+- M6 | Ambiguous-title safeguards | complete; 60 relevant tests passed | document title cleanup and rebuild
+- M6 | Initial title-cleanup build | complete; 245 offline tests passed | recognizable non-title version labels
+- M6 | Recognizable version-label cleanup | complete; 64 relevant tests passed | final updated onedir build
+- M6 | Final title-cleanup onedir build | complete; 249 offline tests passed; Inno Setup unavailable | frozen startup and handoff
+- M6 | Title-cleanup frozen startup | complete; GUI, doctor, version and demo exited 0 | real YouTube retest remains pending
+- Manual rename | Schema-1-to-2 migration | complete; 13 relevant tests passed, existing rows/files preserved | propagate custom titles through display and tags
+- Manual rename | Custom-title display and tagging | complete; 91 relevant tests passed | title-only ID3 update
+- Manual rename | Title-only ID3 update | complete; 30 relevant tests passed | safe rename service
+- Manual rename | Safe rename service | complete; 31 relevant tests passed | rollback race safety
+- Manual rename | Rollback race safety | complete; 25 relevant tests passed | right-click rename UI
+- Manual rename | Right-click rename UI | blocked by a hanging integration test; independent service tests next | diagnose modal/worker interaction
+- Manual rename | Independent service/migration checks | complete; 33 tests passed | deterministic context-menu test
+- Manual rename | Right-click rename UI | complete; 35 relevant tests passed after replacing the blocking test hook | re-download and filename edge cases
+- Manual rename | Re-download and filename edge cases | complete; 46 relevant tests passed | temporary-file race safety
+- Manual rename | Temporary-file race safety | complete; 46 relevant tests passed | native rename dialog and final integration checks
+- Manual rename | Native rename dialog | complete; 31 relevant tests passed | shared-file and reserved-name safeguards
+- Manual rename | Shared-file and reserved-name safeguards | complete; 33 relevant tests passed | documentation and full acceptance
+- Manual rename | Schema-version regression check | complete; 14 relevant tests passed | path-normalization safety
+- Manual rename | Path-normalization safety | complete; 34 relevant tests passed | full offline acceptance
+- Manual rename | Offline acceptance and packaging safeguards | complete; 282 tests passed before final packaging checks, 9 packaging/startup tests passed | rebuild updated onedir
+- Manual rename | Onedir rebuild | in progress; prior onedir and existing installer preserved | verify build and schema-1 migration in frozen app
+- Manual rename | Independent playlist/active-download safeguards | complete; 29 relevant tests passed | final acceptance
+- Manual rename | Acceptance and handoff | complete; 284 offline tests passed, frozen schema migration and GUI smoke passed; installer left for user to rebuild | retest a real download with the updated app
